@@ -20,34 +20,43 @@ async def create_pool(loop, **kw):
         minsize=kw.get('minsize', 1),
         loop=loop
     )
-
+    
+async def destory_pool():
+    global __pool
+    if __pool is not None:
+        __pool.close()
+        await __pool.wait_closed()
    
 # Select    
 async def select(sql, args, size=None):
     log(sql, args)
     global __pool
-    with (await __pool) as conn:
-        cur = await conn.cursor(aiomysql.DictCursor)
-        await cur.execute(sql.replace('?', '%s'), args or ())
-        if size:
-            rs = await cur.fetchmany(size)
-        else:
-            rs = await cur.fetchall()
-        await cur.close()
+    async with __pool.get() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(sql.replace('?', '%s'), args or ())
+            if size:
+                rs = await cur.fetchmany(size)
+            else:
+                rs = await cur.fetchall()
         logging.info('rows returned: %s' % len(rs))
         return rs
 
         
 # Insert, Update, Delete
-async def execute(sql, args):
+async def execute(sql, args, autocommit=True):
     log(sql)
-    with (await __pool) as conn:
+    async with __pool.get() as conn:
+        if not autocommit:
+            await conn.begin()
         try:
-            cur = await conn.cursor()
-            await cur.execute(sql.replace('?', '%s'), args)
-            affected = cur.rowcount
-            await cur.close()
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(sql.replace('?', '%s'), args)
+                affected = cur.rowcount
+            if not autocommit:
+                await conn.commit()
         except BaseException as e:
+            if not autocommit:
+                await conn.rollback()
             raise
         return affected
         
@@ -58,8 +67,59 @@ def create_args_string(num):
     for n in range(num):
         L.append('?')
     return ', '.join(L)
+               
+            
+# 各种Field  
+# 字段名和字段类型     
+class Field(object):
     
     
+    def __init__(self, name, column_type, primary_key, default):
+        self.name = name
+        self.column_type = column_type
+        self.primary_key = primary_key
+        self.default = default
+        
+    
+    def __str__(self):
+        return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type, self.name)
+        
+    
+class StringField(Field):
+    
+    
+    def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
+        super().__init__(name, ddl, primary_key, default)
+        
+        
+class BooleanField(Field):
+    
+    
+    def __init__(self, name=None, default=False):
+        super().__init__(name, 'boolean', False, default)
+        
+        
+class IntegerField(Field):
+    
+    
+    def __init__(self, name=None, primary_key=False, default=0):
+        super().__init__(name, 'bigint', primary_key, default)
+        
+        
+class FloatField(Field):
+    
+    
+    def __init__(self, name=None, primary_key=False, default=0.0):
+        super().__init__(name, 'real', primary_key, default)
+        
+        
+class TextField(Field):
+    
+    
+    def __init__(self, name=None, default=None):
+        super().__init__(name, 'text', False, default)
+        
+        
 class ModelMetaclass(type):
 
 
@@ -81,12 +141,12 @@ class ModelMetaclass(type):
                 if v.primary_key:
                     # 找到主键
                     if primaryKey:
-                        raise RuntimeError('Duplicate primary key for field: %s' % k)
+                        raise StandardError('Duplicate primary key for field: %s' % k)
                     primaryKey = k
                 else:
                     fields.append(k)
         if not primaryKey:
-            raise RuntimeError('Primary key not found.')
+            raise StandardError('Primary key not found.')
         for k in mappings.keys():
             attrs.pop(k)
         escaped_fields = list(map(lambda f: '`%s`' % f, fields))
@@ -205,56 +265,5 @@ class Model(dict, metaclass=ModelMetaclass):
         rows = await execute(self.__delete__, args)
         if rows != 1:
             logging.warn('failed to remove by primary key: affected rows: %s' % rows)
-            
-            
-# 各种Field  
-# 字段名和字段类型     
-class Field(object):
-    
-    
-    def __init__(self, name, column_type, primary_key, default):
-        self.name = name
-        self.column_type = column_type
-        self.primary_key = primary_key
-        self.default = default
-        
-    
-    def __str__(self):
-        return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type, self.name)
-        
-    
-class StringField(Field):
-    
-    
-    def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
-        super().__init__(name, ddl, primary_key, default)
-        
-        
-class BooleanField(Field):
-    
-    
-    def __init__(self, name=None, default=False):
-        super().__init__(name, 'boolean', False, default)
-        
-        
-class IntegerField(Field):
-    
-    
-    def __init__(self, name=None, primary_key=False, default=0):
-        super().__init__(name, 'bigint', primary_key, default)
-        
-        
-class FloatField(Field):
-    
-    
-    def __init__(self, name=None, primary_key=False, default=0.0):
-        super().__init__(name, 'real', primary_key, default)
-        
-        
-class TextField(Field):
-    
-    
-    def __init__(self, name=None, default=None):
-        super().__init__(name, 'text', False, default)
-        
+
 
