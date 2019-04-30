@@ -36,6 +36,9 @@ def get_required_kw_args(fn):
     args = []
     params = inspect.signature(fn).parameters
     for name, param in params.items():
+        # param.default如果参数没有默认值，则此属性设置为parameter.empty。
+        # inspect.Parameter.empty 没有默认值
+        # KEYWORD_ONLY 命名关键字
         if param.kind == inspect.Parameter.KEYWORD_ONLY and param.default == inspect.Parameter.empty:
             args.append(name)
     return tuple(args)
@@ -68,6 +71,8 @@ def has_request_arg(fn):
         if name == 'request':
             found = True
             continue
+        ## 检查request 是否为最后面一个位置参数
+        ## 是否还有位置参数<POSITIONAL_OR_KEYWORD>则为真，然后报错（即非可变参数、非命名关键字参数，非关键字参数）
         if found and (param.kind != inspect.Parameter.VAR_POSITIONAL and param.kind != inspect.Parameter.KEYWORD_ONLY and param.kind != inspect.Parameter.VAR_KEYWORD):
             raise ValueError('Request parameter must be the last named parameter in function: %s%s' % (fn.__name__, str(sig)))
     return found
