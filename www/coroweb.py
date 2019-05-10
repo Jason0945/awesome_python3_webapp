@@ -4,7 +4,8 @@ from urllib import parse
 
 from aiohttp import web
 
-## APIError 是API调用时发生逻辑错误
+## apis是处理分页的模块,代码在本章页面末尾,请将apis.py放在www下以防报错
+## APIError 是指API调用时发生逻辑错误
 from apis import APIError
 
 # 装饰函数 @get()
@@ -139,11 +140,14 @@ class RequestHandler(object):
             return r
         except APIError as e:
             return dict(error=e.error, data=e.data, message=e.message)
+
+## 定义add_static函数，来注册static文件夹下的文件            
 def add_static(app):
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
     app.router.add_static('/static/', path)
     logging.info('add static %s => %s' % ('/static/', path))
-    
+
+## 定义add_route函数，来注册一个URL处理函数   
 def add_route(app, fn):
     method = getattr(fn, '__method__', None)
     path = getattr(fn, '__route__', None)
@@ -153,7 +157,8 @@ def add_route(app, fn):
         fn = asyncio.coroutine(fn)
     logging.info('add route %s %s => %s(%s)' % (method, path, fn.__name__, ', '.join(inspect.signature(fn).parameters.keys())))
     app.router.add_route(method, path, RequestHandler(app, fn))
-    
+
+## 定义add_routes函数，自动把handler模块的所有符合条件的URL函数注册了   
 def add_routes(app, module_name):
     n = module_name.rfind('.')
     if n == (-1):

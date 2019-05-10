@@ -1,10 +1,13 @@
 import json, logging, inspect, functools
 
+## 建立Page类来处理分页,可以在page_size更改每页项目的个数
 class Page(object):
 
     def __init__(self, item_count, page_index=1, page_size=8):
-        self.item.count = item_count
-        self.page_size = page_size
+        ## item.count 条数
+        ## page_count 页面数量
+        self.item_count = item_count
+        self.page_size = page_size   
         self.page_count = item_count // page_size + (1 if item_count % page_size > 0 else 0)
         if (item_count == 0) or (page_index > self.page_count):
             self.offset = 0
@@ -21,7 +24,8 @@ class Page(object):
         return 'item_count: %s, page_count: %s, page_index: %s, page_size: %s, offset: %s, limit: %s' % (self.item_count, self.page_count, self.page_index, self.page_size, self.offset, self.limit)
         
     __repr__ = __str__
-    
+
+## 以下为API的几类错误代码   
 class APIError(Exception):
     def __init__(self, error, data='', message=''):
         super(APIError, self).__init__(message)
